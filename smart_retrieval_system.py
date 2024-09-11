@@ -11,13 +11,11 @@ from langchain.chains.question_answering import load_qa_chain
 
 
 def read_api():
-
     load_dotenv()
     google_api_key = os.getenv("GOOGLE_API_KEY")
     return google_api_key
 
 def get_text(pdf_docs):
-    
     text=""
     for pdf in pdf_docs:
         pdf_reader= PdfReader(pdf)
@@ -26,7 +24,6 @@ def get_text(pdf_docs):
     return  text
 
 def get_text_chunks(text):
-
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=20)
     chunks = text_splitter.split_text(text)
     return chunks
@@ -35,6 +32,29 @@ def get_vector_store(text_chunks):
     google_embedding = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
     vector_store = FAISS.from_texts(text_chunks, embedding=google_embedding)
     return vector_store
+
+# New function to optimize the prompt
+def optimize_prompt(user_question):
+    prompt_template = (
+        "You are a helpful assistant. Based on the following context, answer the user's question. "
+        "Provide a concise and informative response.\n\n"
+        "User's Question: {question}\n"
+    )
+    optimized_prompt = prompt_template.format(question=user_question)
+    return optimized_prompt
+
+def query_ai(vector_store, user_question):
+    docs = vector_store.similarity_search(query=user_question, k=5)
+    googlellm = ChatGoogleGenerativeAI(
+                            model="gemini-1.5-flash",
+                            temperature=0,
+                            max_tokens=None
+                            )
+    # Get optimized prompt
+    refined_prompt = optimize_prompt(user_question)
+    chain = load_qa_chain(llm=googlellm, chain_type="stuff")
+    response = chain.run(input_documents=docs, question=refined_prompt)
+    return response
 
 
 if __name__ == "__main__" :
@@ -67,23 +87,15 @@ if __name__ == "__main__" :
         text_chunks = get_text_chunks(file_extract)
         vector_store = get_vector_store(text_chunks)
 
-    col4, col5 = st.columns([2,1])
-    user_question = st.chat_input(placeholder="Ask Questions About Your PDF")
+        user_question = st.chat_input(placeholder="Ask Questions About Your PDF")
 
-    if user_question:
-        if file_info:
-            docs = vector_store.similarity_search(query=user_question, k=3)
-            googlellm = ChatGoogleGenerativeAI(
-                                        model="gemini-1.5-flash",
-                                        temperature=0,
-                                        max_tokens=None
-                                        )
-            chain = load_qa_chain(llm=googlellm, chain_type="stuff")
-            response = chain.run(input_documents=docs, question=user_question)
-            st.write(response)
-        else:
-            st.warning("Please Upload PDF")
-        
+        if user_question:
+            answer = query_ai(vector_store, user_question)
+
+            st.write(f"User Question: {user_question}")
+            # Display the answer
+            st.write(f"Answer: {answer}")
+
   
 
 
